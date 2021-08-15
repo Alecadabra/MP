@@ -1,14 +1,17 @@
 import cv2 as cv
 import numpy as np
 from matplotlib import pyplot as plt
+import os
+
+# Get the current project directory path
+path = f'{os.path.dirname(os.path.abspath(__file__))}/'
 
 # Every image file path
-relPath = 'Practical Exercises/P1/ex01/'
-imgPaths = [f'{relPath}prac01ex01img{num:02d}.png' for num in range(1,5)]
+imgPaths = [f'{path}prac01ex01img{num:02d}.png' for num in range(1,5)]
 
 for (i, imgPath) in enumerate(imgPaths):
     
-    shortImgPath = imgPath[(len(relPath)):]
+    shortImgPath = imgPath[(len(path)):]
     print(f'Reading in {shortImgPath}')
 
     img = cv.imread(imgPath, cv.IMREAD_COLOR)
