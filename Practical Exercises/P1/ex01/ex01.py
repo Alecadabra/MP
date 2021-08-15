@@ -15,7 +15,7 @@ for (i, imgPath) in enumerate(imgPaths):
 
     # Print out the image file name and its dimensions (width and height)
 
-    width, height, _ = img.shape
+    width, height = img.shape[:-1]
     print(f'{shortImgPath} dimensions: Width = {width}, height = {height}')
 
     # Compute and print out the histogram (with 10 uniform bins) of each colour
