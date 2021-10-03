@@ -1,4 +1,5 @@
 import argparse
+import number_finder
 
 def main():
     parser = argparse.ArgumentParser(
@@ -15,8 +16,8 @@ def main():
 
     args = parser.parse_args()
 
-    print(args.task)
+    if args.task == 'task1':
+        number_finder.task1()
 
-    
 if __name__ == '__main__':
     main()
