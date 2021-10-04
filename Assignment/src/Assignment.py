@@ -5,6 +5,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='MP Assignment by Alec Maughan',
         add_help=True,
+        epilog='dependencies: python 3.7.3, opencv-python 3.4.2.16, matplotlib'
     )
 
     parser.add_argument(

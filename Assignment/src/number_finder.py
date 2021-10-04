@@ -38,16 +38,26 @@ def aspectRatio(contour):
     else:
         return width / height
 
+def solidity(contour):
+    hull = cv.convexHull(contour)
+    hullArea = cv.contourArea(hull)
+
+    if hullArea == 0:
+        # Divide by zero
+        return float('inf')
+    else:
+        return cv.contourArea(contour) / hullArea
+
 def task1():
     sep = os.path.sep
     # Get the current project directory path
     path = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
     
-    train = f'{path}train{sep}task1{sep}'
+    train = f'{path}train{sep}task2{sep}'
 
-    trainImgs = [cv.imread(f'{train}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
+    trainImgs = [cv.imread(f'{train}DS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
 
-    for (i, img) in enumerate(trainImgs, start=1):
+    for (n, img) in enumerate(trainImgs, start=1):
         # showImage(img, f'Image {i}')
 
         blurred = cv.GaussianBlur(img, (3, 3), 0)
@@ -56,27 +66,44 @@ def task1():
 
         edges = cv.Canny(greyBlurred, 300, 400)
 
-        # showImage(edges, f'Canny of img {i}')
+        # showImage(edges, f'Canny of img {n}')
+
+        # morphKernel = np.ones((7, 7), np.uint8)
+
+        # morphed = cv.dilate(edges, morphKernel)
+
+        # showImage(morphed, f'Morphed canny of img {n}')
 
         _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
+        imgWidth, imgHeight, _ = img.shape
+        bigEnough = lambda contour: cv.contourArea(contour) > 0.0003 * (imgWidth * imgHeight)
+
+        filteredContours = list(filter(bigEnough, contours))
+
+        # sortedContours = sorted(filteredContours, key=lambda contour: abs(solidity(contour) - 2), reverse=True)
+
+        # for i, contour in enumerate(sortedContours):
+        #     drawnContour = img.copy()
+        #     showImage(cv.drawContours(drawnContour, sortedContours, i, randomColour(), thickness=3), f'Img {n} contour {i + 1}')
+
         drawnContours = img.copy()
 
-        for i, _ in enumerate(contours):
-            drawnContours = cv.drawContours(drawnContours, contours, i, randomColour(), thickness=2)
+        for i, _ in enumerate(filteredContours):
+            drawnContours = cv.drawContours(drawnContours, filteredContours, i, randomColour(), thickness=2)
 
-        # showImage(drawnContours, f'Contours for img {i}')
+        showImage(drawnContours, f'Contours for img {n}')
 
         hulls = [cv.convexHull(contour) for contour in contours]
 
         sortedHulls = sorted(hulls, key=lambda hull: aspectRatio(hull))[0:3]
 
-        sortedContours = sorted(contours, key=lambda contour: abs(aspectRatio(contour) - 2))[0:3]
+        drawnHulls = img.copy()
 
-        drawnContours = img.copy()
+        for i, _ in enumerate(hulls):
+            drawnHulls = cv.drawContours(drawnHulls, hulls, i, randomColour(), thickness=2)
 
-        for i, _ in enumerate(sortedHulls):
-            drawnContours = cv.drawContours(drawnContours, sortedContours, i, randomColour(), thickness=2)
+        # showImage(drawnHulls, f'Hulls for img {n}')
 
         drawnRects = img.copy()
 
@@ -84,6 +111,8 @@ def task1():
             x, y, w, h = cv.boundingRect(contour)
             drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
         
-        showImage(drawnRects, f'Bounding rects for img {i}')
+        # showImage(drawnRects, f'Bounding rects for img {n}')
+
+
 
 
