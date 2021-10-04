@@ -30,7 +30,7 @@ def randomColour():
     )
 
 def aspectRatio(contour):
-    x, y, width, height = cv.boundingRect(contour)
+    _, _, width, height = cv.boundingRect(contour)
 
     if height == 0:
         # Divide by zero
@@ -48,71 +48,105 @@ def solidity(contour):
     else:
         return cv.contourArea(contour) / hullArea
 
+def drawContours(img, contours, thickness=2):
+    destImg = img.copy()
+
+    for i in range(len(contours)):
+        destImg = cv.drawContours(destImg, contours, i, randomColour(), thickness=thickness)
+
+    return destImg
+
+def findEdges(img):
+    blurred = cv.GaussianBlur(img, (3, 3), 0)
+    greyBlurred = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
+    edges = cv.Canny(greyBlurred, 300, 400)
+
+    return edges
+
+def relativeSize(img, contour):
+    imgWidth, imgHeight, _ = img.shape
+    _, _, width, height = cv.boundingRect(contour)
+
+    return (width * height) / (imgWidth * imgHeight)
+
+def findSimilar(rects):
+    similarity = []
+
+    sortedRects = list(sorted(rects, key=lambda r: r[3]))
+
+    for i in range(len(sortedRects)):
+        if i + 1 == len(rects):
+            j = 0
+        else:
+            j = i + 1
+        
+        ci = rects[i]
+        cj = rects[j]
+
+        _, _, _, hi = ci
+        _, _, _, hj = cj
+
+        similarity.append(abs(hi - hj))
+    
+    return similarity
+        
+
 def task1():
     sep = os.path.sep
     # Get the current project directory path
     path = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
     
-    train = f'{path}train{sep}task2{sep}'
+    train = f'{path}train{sep}task1{sep}'
 
-    trainImgs = [cv.imread(f'{train}DS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
+    trainImgs = [cv.imread(f'{train}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
 
     for (n, img) in enumerate(trainImgs, start=1):
-        # showImage(img, f'Image {i}')
 
-        blurred = cv.GaussianBlur(img, (3, 3), 0)
+        # showImage(img, f'Image {n}')
 
-        greyBlurred = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
-
-        edges = cv.Canny(greyBlurred, 300, 400)
+        edges = findEdges(img)
 
         # showImage(edges, f'Canny of img {n}')
-
-        # morphKernel = np.ones((7, 7), np.uint8)
-
-        # morphed = cv.dilate(edges, morphKernel)
-
-        # showImage(morphed, f'Morphed canny of img {n}')
 
         _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
         imgWidth, imgHeight, _ = img.shape
-        bigEnough = lambda contour: cv.contourArea(contour) > 0.0003 * (imgWidth * imgHeight)
 
-        filteredContours = list(filter(bigEnough, contours))
+        filteredContours = list(filter(lambda c: relativeSize(img, c) > 0.0006, contours))
+
+        filteredContours = list(filter(lambda c: 0.4 < aspectRatio(c) < 0.8, filteredContours))
+
+        # filteredContours = list(sorted(filteredContours, key=lambda c: relativeSize(img, c), reverse=True))[:3]
 
         # sortedContours = sorted(filteredContours, key=lambda contour: abs(solidity(contour) - 2), reverse=True)
 
-        # for i, contour in enumerate(sortedContours):
-        #     drawnContour = img.copy()
-        #     showImage(cv.drawContours(drawnContour, sortedContours, i, randomColour(), thickness=3), f'Img {n} contour {i + 1}')
+        drawnContours = drawContours(img, filteredContours)
+        # showImage(drawnContours, f'Contours for img {n}')
 
-        drawnContours = img.copy()
-
-        for i, _ in enumerate(filteredContours):
-            drawnContours = cv.drawContours(drawnContours, filteredContours, i, randomColour(), thickness=2)
-
-        showImage(drawnContours, f'Contours for img {n}')
-
-        hulls = [cv.convexHull(contour) for contour in contours]
-
-        sortedHulls = sorted(hulls, key=lambda hull: aspectRatio(hull))[0:3]
-
-        drawnHulls = img.copy()
-
-        for i, _ in enumerate(hulls):
-            drawnHulls = cv.drawContours(drawnHulls, hulls, i, randomColour(), thickness=2)
-
+        # hulls = [cv.convexHull(contour) for contour in contours]
+        # drawnHulls = drawContours(img, hulls)
         # showImage(drawnHulls, f'Hulls for img {n}')
 
+        rects = [cv.boundingRect(c) for c in filteredContours]
+
+        similar = findSimilar(rects)
+
+        sortedRects = list(sorted(
+            rects,
+            key=lambda r: similar[rects.index(r)]
+        ))[:3]
+
         drawnRects = img.copy()
-
-        for i, contour in enumerate(contours):
-            x, y, w, h = cv.boundingRect(contour)
+        for i, (x, y, w, h) in enumerate(sortedRects):
             drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
-        
-        # showImage(drawnRects, f'Bounding rects for img {n}')
+        showImage(drawnRects, f'Bounding rects for img {n}')
 
+        ### (x, y), (width, height), angle = cv.minAreaRec
+        # rotRects = [np.int0(cv.boxPoints(cv.minAreaRect(contour))) for contour in contours]
+        # drawnRotRects = drawContours(img, rotRects)
+        # showImage(drawnRotRects, f'Min area rects for img {n}')
 
-
+        # approxCurves = [cv.approxPolyDP(contour, 0.05 * cv.arcLength(contour, True), True) for contour in contours]
+        # drawnApproxCurves = drawContours(img, approxCurves)
+        # showImage(drawnApproxCurves, f'Approx curves for img {n}')
 
