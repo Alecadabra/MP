@@ -1,8 +1,12 @@
+import itertools
+from types import LambdaType
+from typing import Iterable
 import cv2 as cv
 import numpy as np
 import os
 from matplotlib import pyplot as plt
 import random
+from itertools import permutations
 
 def showImage(img, name):
     cv.imshow(name, img)
@@ -48,6 +52,20 @@ def solidity(contour):
     else:
         return cv.contourArea(contour) / hullArea
 
+def rectangularity(contour):
+    box = boxContour(contour)
+    boxArea = cv.contourArea(box)
+
+    if boxArea == 0:
+        # Divide by zero
+        return 0
+    else:
+        return cv.contourArea(contour) / boxArea
+
+def boxContour(contour):
+    x, y, w, h = cv.boundingRect(contour)
+    return np.int0([(x, y), (x+w, y), (x+w, y+h), (x, y+h)])
+
 def drawContours(img, contours, thickness=2):
     destImg = img.copy()
 
@@ -56,10 +74,10 @@ def drawContours(img, contours, thickness=2):
 
     return destImg
 
-def findEdges(img):
-    blurred = cv.GaussianBlur(img, (3, 3), 0)
+def findEdges(img, gaussian=3, t1=300, t2=400):
+    blurred = cv.GaussianBlur(img, (gaussian, gaussian), 0)
     greyBlurred = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
-    edges = cv.Canny(greyBlurred, 300, 400)
+    edges = cv.Canny(greyBlurred, t1, t2)
 
     return edges
 
@@ -69,29 +87,22 @@ def relativeSize(img, contour):
 
     return (width * height) / (imgWidth * imgHeight)
 
-def findSimilar(rects):
-    similarity = []
+# Find permutation with smallest differences in y values
+# Finds the average differences between elements in an iterable, given 
+# a mapping function
+def avgDifference(iterable: Iterable, key: LambdaType):
+    return sum(map(
+        lambda x: key(x),
+        permutations(iterable, 2)
+    )) / len(list(permutations(iterable, 2)))
 
-    sortedRects = list(sorted(rects, key=lambda r: r[3]))
+def rotateImg(img, angle):
+    width, height, _ = img.shape
+    center = (width / 2, height / 2)
+    mat = cv.getRotationMatrix2D(center, angle, 1.0)
+    return cv.warpAffine(img, mat, (width, height), flags=cv.INTER_LINEAR)
 
-    for i in range(len(sortedRects)):
-        if i + 1 == len(rects):
-            j = 0
-        else:
-            j = i + 1
-        
-        ci = rects[i]
-        cj = rects[j]
-
-        _, _, _, hi = ci
-        _, _, _, hj = cj
-
-        similarity.append(abs(hi - hj))
-    
-    return similarity
-        
-
-def task1():
+def task1(): 
     sep = os.path.sep
     # Get the current project directory path
     path = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
@@ -103,6 +114,18 @@ def task1():
     for (n, img) in enumerate(trainImgs, start=1):
 
         # showImage(img, f'Image {n}')
+
+        # boxEdges = findEdges(img, t1=30, t2=50)
+        # showImage(boxEdges, f'Edges for img {n}')
+
+        # _, boxContours, _ = cv.findContours(boxEdges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+        # filteredBoxes = boxContours
+        # # filteredBoxes = list(filter(lambda c: relativeSize(img, c) > 0.002, filteredBoxes))
+        # filteredBoxes = list(filter(lambda c: rectangularity(c) > 0.7, filteredBoxes))
+        # # filteredBoxes = list(filter(lambda c: 1.2 < aspectRatio(c) < 1.8, filteredBoxes))
+
+        # drawnBox = drawContours(img, filteredBoxes)
+        # showImage(drawnBox, f'Box for img {n}')
 
         edges = findEdges(img)
 
@@ -129,17 +152,58 @@ def task1():
 
         rects = [cv.boundingRect(c) for c in filteredContours]
 
-        similar = findSimilar(rects)
+        sortedRects = rects
+        sortedRects = sorted(sortedRects, key=lambda c: c[3])
 
-        sortedRects = list(sorted(
-            rects,
-            key=lambda r: similar[rects.index(r)]
-        ))[:3]
+        perms = permutations(rects, 3)
+        perms = list(filter(
+            lambda p: p[0][0] < p[1][0] < p[2][0] and (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2]),
+            perms
+        ))
+        perms = list(filter(
+            lambda p: 
+                avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < 10 and
+                avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < 10,
+            perms
+        ))
+
+        perm = max(
+            perms,
+            key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
+        )
 
         drawnRects = img.copy()
-        for i, (x, y, w, h) in enumerate(sortedRects):
+        for i, (x, y, w, h) in enumerate(perm):
             drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
-        showImage(drawnRects, f'Bounding rects for img {n}')
+        # showImage(drawnRects, f'Bounding rects for img {n}')
+
+        angleOpp = ((perm[2][0] + perm[2][2]) - perm[0][0])
+        angleAdj = ((perm[2][1] + perm[2][3]) - (perm[0][1] + perm[0][3]))
+        if angleAdj != 0:
+            angle = np.arctan(angleOpp / angleAdj)
+        else:
+            angle = 0
+
+        # x, y, w, h
+        pad = int((sum(map(lambda p: p[3], perm)) / 3) * 0.3)
+        bounding = (
+            perm[0][0] - pad,
+            perm[0][1] - pad,
+            (perm[2][0] + perm[2][2]) - perm[0][0] + pad + pad,
+            max(perm, key=lambda p: p[3])[3] + pad + pad
+        )
+
+        bx, by, bw, bh = bounding
+        drawnBounding = img.copy()
+        drawnBounding = cv.rectangle(drawnBounding, (bx, by), (bx+bw, by+bh), randomColour(), thickness=2)
+        # showImage(drawnBounding, f'Enclosing box for img {n}, angle: {angle}')
+
+        rotBounding = np.int0(cv.boxPoints(((bx+(bw/2), by+(bh/2)), (bw, bh), angle)))
+        drawnRotBounding = drawContours(img, [rotBounding])
+        # showImage(drawnRotBounding, f'Rotated enclosing box for img {n}')
+
+        rotatedImg = rotateImg(img.copy(), angle)
+        showImage(rotatedImg, f'Rotated enclosing box for img {n}')
 
         ### (x, y), (width, height), angle = cv.minAreaRec
         # rotRects = [np.int0(cv.boxPoints(cv.minAreaRect(contour))) for contour in contours]
