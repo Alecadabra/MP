@@ -1,4 +1,3 @@
-import itertools
 from types import LambdaType
 from typing import Iterable
 import cv2 as cv
@@ -82,7 +81,7 @@ def findEdges(img, gaussian=3, t1=300, t2=400):
     return edges
 
 def relativeSize(img, contour):
-    imgWidth, imgHeight, _ = img.shape
+    imgWidth, imgHeight = img.shape[:2]
     _, _, width, height = cv.boundingRect(contour)
 
     return (width * height) / (imgWidth * imgHeight)
@@ -96,11 +95,103 @@ def avgDifference(iterable: Iterable, key: LambdaType):
         permutations(iterable, 2)
     )) / len(list(permutations(iterable, 2)))
 
-def rotateImg(img, angle):
-    width, height, _ = img.shape
-    center = (width / 2, height / 2)
-    mat = cv.getRotationMatrix2D(center, angle, 1.0)
-    return cv.warpAffine(img, mat, (width, height), flags=cv.INTER_LINEAR)
+def cropImg(img, rotRect):
+    _, (width, height), _ = rotRect
+    rotBoundingCont = np.int0(cv.boxPoints(rotRect))
+    points = rotBoundingCont.astype('float32')
+    dest = np.array(
+        [
+            [0, height - 1],
+            [0, 0],
+            [width - 1, 0],
+            [width - 1, height - 1],
+        ],
+        dtype='float32'
+    )
+
+    perspectiveMat = cv.getPerspectiveTransform(points, dest)
+    cropped = cv.warpPerspective(img, perspectiveMat, (width, height))
+
+    return cropped
+
+def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
+    _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+
+    filteredContours = list(filter(lambda c: relativeSize(edges, c) > relSizeThresh, contours))
+
+    filteredContours = list(filter(lambda c: minRatio < aspectRatio(c) < maxRatio, filteredContours))
+
+    rects = [cv.boundingRect(c) for c in filteredContours]
+
+    sortedRects = rects
+    sortedRects = sorted(sortedRects, key=lambda c: c[3])
+
+    perms = permutations(rects, 3)
+    perms = list(filter(
+        lambda p: p[0][0] < p[1][0] < p[2][0] and (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2]),
+        perms
+    ))
+    perms = list(filter(
+        lambda p: 
+            avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < 10 and
+            avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < 10,
+        perms
+    ))
+
+    perm = max(
+        perms,
+        key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
+    )
+
+    return perm
+
+def numberAngle(numbers):
+    angleOpp = ((numbers[2][0] + numbers[2][2]) - numbers[0][0])
+    angleAdj = ((numbers[2][1] + numbers[2][3]) - (numbers[0][1] + numbers[0][3]))
+
+    if angleAdj != 0:
+        angle = np.arctan(angleOpp / angleAdj)
+    else:
+        angle = 0
+    
+    return angle
+
+def cropToNumbers(img):
+    edges = findEdges(img)
+
+    numberRects = findNumbers(edges)
+
+    # drawnRects = img.copy()
+    # for i, (x, y, w, h) in enumerate(numberRects):
+    #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
+    # showImage(drawnRects, f'Bounding rects for img {n}')
+
+    angle = numberAngle(numberRects)
+
+    pad = int((sum(map(lambda p: p[3], numberRects)) / 3) * 0.25)
+    boundingRect = (
+        numberRects[0][0] - pad,
+        numberRects[0][1] - pad,
+        (numberRects[2][0] + numberRects[2][2]) - numberRects[0][0] + pad + pad,
+        max(numberRects, key=lambda p: p[3])[3] + pad + pad
+    )
+
+    bx, by, bw, bh = boundingRect
+    # drawnBounding = img.copy()
+    # drawnBounding = cv.rectangle(drawnBounding, (bx, by), (bx+bw, by+bh), randomColour(), thickness=2)
+    # showImage(drawnBounding, f'Enclosing box for img {n}, angle: {angle}')
+
+    rotBounding = (bx+(bw/2), by+(bh/2)), (bw, bh), angle
+    # rotBoundingCont = np.int0(cv.boxPoints(((bx+(bw/2), by+(bh/2)), (bw, bh), angle)))
+    # drawnRotBounding = drawContours(img, [rotBoundingCont])
+    # showImage(drawnRotBounding, f'Rotated enclosing box for img {n}')
+
+    # rotatedImg = cropImg(img.copy(), angle)
+    # showImage(rotatedImg, f'Rotated enclosing box for img {n}')
+
+    cropped = cropImg(img, rotBounding)
+
+    return cropped
 
 def task1(): 
     sep = os.path.sep
@@ -109,108 +200,51 @@ def task1():
     
     train = f'{path}train{sep}task1{sep}'
 
+    output = f'{path}output{sep}task1{sep}'
+
     trainImgs = [cv.imread(f'{train}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
 
     for (n, img) in enumerate(trainImgs, start=1):
 
-        # showImage(img, f'Image {n}')
+        cropped = cropToNumbers(img)
 
-        # boxEdges = findEdges(img, t1=30, t2=50)
-        # showImage(boxEdges, f'Edges for img {n}')
+        # showImage(cropped, f'Cropped & rotated img {n}')
+        cv.imwrite(f'{output}DetectedArea{n:02d}.jpg', cropped)
 
-        # _, boxContours, _ = cv.findContours(boxEdges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-        # filteredBoxes = boxContours
-        # # filteredBoxes = list(filter(lambda c: relativeSize(img, c) > 0.002, filteredBoxes))
-        # filteredBoxes = list(filter(lambda c: rectangularity(c) > 0.7, filteredBoxes))
-        # # filteredBoxes = list(filter(lambda c: 1.2 < aspectRatio(c) < 1.8, filteredBoxes))
 
-        # drawnBox = drawContours(img, filteredBoxes)
-        # showImage(drawnBox, f'Box for img {n}')
 
-        edges = findEdges(img)
+# showImage(img, f'Image {n}')
 
-        # showImage(edges, f'Canny of img {n}')
+# boxEdges = findEdges(img, t1=30, t2=50)
+# showImage(boxEdges, f'Edges for img {n}')
 
-        _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+# _, boxContours, _ = cv.findContours(boxEdges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+# filteredBoxes = boxContours
+# # filteredBoxes = list(filter(lambda c: relativeSize(img, c) > 0.002, filteredBoxes))
+# filteredBoxes = list(filter(lambda c: rectangularity(c) > 0.7, filteredBoxes))
+# # filteredBoxes = list(filter(lambda c: 1.2 < aspectRatio(c) < 1.8, filteredBoxes))
 
-        imgWidth, imgHeight, _ = img.shape
+# drawnBox = drawContours(img, filteredBoxes)
+# showImage(drawnBox, f'Box for img {n}')
 
-        filteredContours = list(filter(lambda c: relativeSize(img, c) > 0.0006, contours))
 
-        filteredContours = list(filter(lambda c: 0.4 < aspectRatio(c) < 0.8, filteredContours))
+# filteredContours = list(sorted(filteredContours, key=lambda c: relativeSize(img, c), reverse=True))[:3]
 
-        # filteredContours = list(sorted(filteredContours, key=lambda c: relativeSize(img, c), reverse=True))[:3]
+# sortedContours = sorted(filteredContours, key=lambda contour: abs(solidity(contour) - 2), reverse=True)
 
-        # sortedContours = sorted(filteredContours, key=lambda contour: abs(solidity(contour) - 2), reverse=True)
+# drawnContours = drawContours(img, filteredContours)
+# showImage(drawnContours, f'Contours for img {n}')
 
-        drawnContours = drawContours(img, filteredContours)
-        # showImage(drawnContours, f'Contours for img {n}')
+# hulls = [cv.convexHull(contour) for contour in contours]
+# drawnHulls = drawContours(img, hulls)
+# showImage(drawnHulls, f'Hulls for img {n}')
 
-        # hulls = [cv.convexHull(contour) for contour in contours]
-        # drawnHulls = drawContours(img, hulls)
-        # showImage(drawnHulls, f'Hulls for img {n}')
 
-        rects = [cv.boundingRect(c) for c in filteredContours]
+### (x, y), (width, height), angle = cv.minAreaRec
+# rotRects = [np.int0(cv.boxPoints(cv.minAreaRect(contour))) for contour in contours]
+# drawnRotRects = drawContours(img, rotRects)
+# showImage(drawnRotRects, f'Min area rects for img {n}')
 
-        sortedRects = rects
-        sortedRects = sorted(sortedRects, key=lambda c: c[3])
-
-        perms = permutations(rects, 3)
-        perms = list(filter(
-            lambda p: p[0][0] < p[1][0] < p[2][0] and (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2]),
-            perms
-        ))
-        perms = list(filter(
-            lambda p: 
-                avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < 10 and
-                avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < 10,
-            perms
-        ))
-
-        perm = max(
-            perms,
-            key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
-        )
-
-        drawnRects = img.copy()
-        for i, (x, y, w, h) in enumerate(perm):
-            drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
-        # showImage(drawnRects, f'Bounding rects for img {n}')
-
-        angleOpp = ((perm[2][0] + perm[2][2]) - perm[0][0])
-        angleAdj = ((perm[2][1] + perm[2][3]) - (perm[0][1] + perm[0][3]))
-        if angleAdj != 0:
-            angle = np.arctan(angleOpp / angleAdj)
-        else:
-            angle = 0
-
-        # x, y, w, h
-        pad = int((sum(map(lambda p: p[3], perm)) / 3) * 0.3)
-        bounding = (
-            perm[0][0] - pad,
-            perm[0][1] - pad,
-            (perm[2][0] + perm[2][2]) - perm[0][0] + pad + pad,
-            max(perm, key=lambda p: p[3])[3] + pad + pad
-        )
-
-        bx, by, bw, bh = bounding
-        drawnBounding = img.copy()
-        drawnBounding = cv.rectangle(drawnBounding, (bx, by), (bx+bw, by+bh), randomColour(), thickness=2)
-        # showImage(drawnBounding, f'Enclosing box for img {n}, angle: {angle}')
-
-        rotBounding = np.int0(cv.boxPoints(((bx+(bw/2), by+(bh/2)), (bw, bh), angle)))
-        drawnRotBounding = drawContours(img, [rotBounding])
-        # showImage(drawnRotBounding, f'Rotated enclosing box for img {n}')
-
-        rotatedImg = rotateImg(img.copy(), angle)
-        showImage(rotatedImg, f'Rotated enclosing box for img {n}')
-
-        ### (x, y), (width, height), angle = cv.minAreaRec
-        # rotRects = [np.int0(cv.boxPoints(cv.minAreaRect(contour))) for contour in contours]
-        # drawnRotRects = drawContours(img, rotRects)
-        # showImage(drawnRotRects, f'Min area rects for img {n}')
-
-        # approxCurves = [cv.approxPolyDP(contour, 0.05 * cv.arcLength(contour, True), True) for contour in contours]
-        # drawnApproxCurves = drawContours(img, approxCurves)
-        # showImage(drawnApproxCurves, f'Approx curves for img {n}')
-
+# approxCurves = [cv.approxPolyDP(contour, 0.05 * cv.arcLength(contour, True), True) for contour in contours]
+# drawnApproxCurves = drawContours(img, approxCurves)
+# showImage(drawnApproxCurves, f'Approx curves for img {n}')
