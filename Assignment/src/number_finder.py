@@ -26,40 +26,24 @@ def plotImage(img, name):
     plt.show()
 
 def randomColour():
-    return (
-        random.randint(0, 0xff),
-        random.randint(0, 0xff),
-        random.randint(0, 0xff)
-    )
+    return tuple([random.randint(0, 0xff) for _ in range(3)])
 
 def aspectRatio(contour):
     _, _, width, height = cv.boundingRect(contour)
 
-    if height == 0:
-        # Divide by zero
-        return float('inf')
-    else:
-        return width / height
+    return width / height if height != 0 else 0
 
 def solidity(contour):
     hull = cv.convexHull(contour)
     hullArea = cv.contourArea(hull)
 
-    if hullArea == 0:
-        # Divide by zero
-        return float('inf')
-    else:
-        return cv.contourArea(contour) / hullArea
+    return cv.contourArea(contour) / hullArea if hullArea != 0 else 0
 
 def rectangularity(contour):
     box = boxContour(contour)
     boxArea = cv.contourArea(box)
-
-    if boxArea == 0:
-        # Divide by zero
-        return 0
-    else:
-        return cv.contourArea(contour) / boxArea
+    
+    return cv.contourArea(contour) / boxArea if boxArea != 0 else 0
 
 def boxContour(contour):
     x, y, w, h = cv.boundingRect(contour)
@@ -82,9 +66,12 @@ def findEdges(img, gaussian=3, t1=300, t2=400):
 
 def relativeSize(img, contour):
     imgWidth, imgHeight = img.shape[:2]
-    _, _, width, height = cv.boundingRect(contour)
+    _, _, cntWidth, cntHeight = cv.boundingRect(contour)
 
-    return (width * height) / (imgWidth * imgHeight)
+    imgArea = imgWidth * imgHeight
+    contourArea = cntWidth * cntHeight
+
+    return contourArea / imgArea if imgArea != 0 else 0
 
 # Find permutation with smallest differences in y values
 # Finds the average differences between elements in an iterable, given 
@@ -117,9 +104,9 @@ def cropImg(img, rotRect):
 def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
     _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
-    filteredContours = list(filter(lambda c: relativeSize(edges, c) > relSizeThresh, contours))
+    filteredContours = [c for c in contours if relativeSize(edges, c) > relSizeThresh]
 
-    filteredContours = list(filter(lambda c: minRatio < aspectRatio(c) < maxRatio, filteredContours))
+    filteredContours = [c for c in filteredContours if minRatio < aspectRatio(c) < maxRatio]
 
     rects = [cv.boundingRect(c) for c in filteredContours]
 
@@ -127,19 +114,24 @@ def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
     sortedRects = sorted(sortedRects, key=lambda c: c[3])
 
     perms = permutations(rects, 3)
-    perms = list(filter(
-        lambda p: p[0][0] < p[1][0] < p[2][0] and (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2]),
-        perms
-    ))
-    perms = list(filter(
-        lambda p: 
-            avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < 10 and
-            avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < 10,
-        perms
-    ))
+    # Filter to only get left to right perms
+    perms = [p for p in perms if p[0][0] < p[1][0] < p[2][0] and
+        (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2])
+    ]
+
+    # Filter to only get perms of similar heights and y values to each other
+    # Loop until the filtered list is non-empty
+    filteredPerms = []
+    thresh = 10
+    while (len(filteredPerms) == 0):
+        filteredPerms = [p for p in perms if 
+            avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < thresh and
+            avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < thresh
+        ]
+        thresh += 1
 
     perm = max(
-        perms,
+        filteredPerms,
         key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
     )
 
@@ -148,13 +140,19 @@ def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
 def numberAngle(numbers):
     angleOpp = ((numbers[2][0] + numbers[2][2]) - numbers[0][0])
     angleAdj = ((numbers[2][1] + numbers[2][3]) - (numbers[0][1] + numbers[0][3]))
-
-    if angleAdj != 0:
-        angle = np.arctan(angleOpp / angleAdj)
-    else:
-        angle = 0
     
-    return angle
+    return np.arctan(angleOpp / angleAdj) if angleAdj != 0 else 0
+
+def padRect(rect, padX, padY):
+    padX = int(padX)
+    padY = int(padY)
+    boundingRect = (
+        rect[0] - padX,
+        rect[1] - padY,
+        rect[2] + padX * 2,
+        rect[3] + padY * 2
+    )
+    return boundingRect
 
 def cropToNumbers(img):
     edges = findEdges(img)
@@ -168,7 +166,7 @@ def cropToNumbers(img):
 
     angle = numberAngle(numberRects)
 
-    pad = int((sum(map(lambda p: p[3], numberRects)) / 3) * 0.25)
+    pad = int((sum([p[3] for p in numberRects]) / 3) * 0.25)
     boundingRect = (
         numberRects[0][0] - pad,
         numberRects[0][1] - pad,
@@ -196,20 +194,68 @@ def cropToNumbers(img):
 def task1(): 
     sep = os.path.sep
     # Get the current project directory path
-    path = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
+    projDir = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
     
-    train = f'{path}train{sep}task1{sep}'
+    trainDir = f'{projDir}train{sep}task1{sep}'
 
-    output = f'{path}output{sep}task1{sep}'
+    outputDir = f'{projDir}output{sep}task1{sep}'
 
-    trainImgs = [cv.imread(f'{train}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
+    trainImgs = [cv.imread(f'{trainDir}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
+
+    digitsDir = f'{projDir}digits{sep}'
+
+    digitsName = {
+        0: 'Zero',
+        1: 'One',
+        2: 'Two',
+        3: 'Three',
+        4: 'Four',
+        5: 'Five',
+        6: 'Six',
+        7: 'Seven',
+        8: 'Eight',
+        9: 'Nine',
+        'l': 'LeftArrow',
+        'r': 'RightArrow'
+    }
+
+    digits = {
+        key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsName.items()
+    }
 
     for (n, img) in enumerate(trainImgs, start=1):
 
         cropped = cropToNumbers(img)
 
         # showImage(cropped, f'Cropped & rotated img {n}')
-        cv.imwrite(f'{output}DetectedArea{n:02d}.jpg', cropped)
+        cv.imwrite(f'{outputDir}DetectedArea{n:02d}.jpg', cropped)
+
+        numberRects = findNumbers(findEdges(cropped), relSizeThresh=0.006)
+
+        # drawnRects = cropped.copy()
+        # for i, (x, y, w, h) in enumerate(numbers):
+        #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
+        # showImage(drawnRects, f'Bounding rects for img {n}')
+
+        minWidth, minHeight = 28, 40
+
+        numberRectsPadded = [padRect(rect, (rect[3] * 0.05), (rect[3] * 0.05)) for rect in numberRects]
+
+        def rectToRotRect(rect):
+            x, y, w, h = rect
+            return (x+(w/2), y+(h/2)), (w, h), 0
+
+        numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
+
+        resizedNumberImgs = [cv.resize(numImg, (28, 40)) for numImg in numberImgs]
+
+        for i, numberImg in enumerate(resizedNumberImgs, start=1):
+            showImage(numberImg, f'Img {n} number {i}')
+
+    # for digit, l in digits.items():
+    #     for i, digitImg in enumerate(l):
+    #         showImage(digitImg, f'Digit {digit} img {i + 1}')
+
 
 
 
