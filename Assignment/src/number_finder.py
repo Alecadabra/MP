@@ -1,5 +1,5 @@
 from types import LambdaType
-from typing import Iterable
+from typing import Iterable, Union
 import cv2 as cv
 import numpy as np
 import os
@@ -144,8 +144,8 @@ def numberAngle(numbers):
     return np.arctan(angleOpp / angleAdj) if angleAdj != 0 else 0
 
 def padRect(rect, padX, padY):
-    padX = int(padX)
-    padY = int(padY)
+    padX = round(padX)
+    padY = round(padY)
     boundingRect = (
         rect[0] - padX,
         rect[1] - padY,
@@ -166,7 +166,7 @@ def cropToNumbers(img):
 
     angle = numberAngle(numberRects)
 
-    pad = int((sum([p[3] for p in numberRects]) / 3) * 0.25)
+    pad = round((sum([p[3] for p in numberRects]) / 3) * 0.25)
     boundingRect = (
         numberRects[0][0] - pad,
         numberRects[0][1] - pad,
@@ -190,6 +190,72 @@ def cropToNumbers(img):
     cropped = cropImg(img, rotBounding)
 
     return cropped
+
+def matchNum(img, numbers):
+    method = cv.TM_CCOEFF_NORMED
+    maxima = {value: 0 for value in numbers.keys()}
+
+    img = cv.cvtColor(img.copy(), cv.COLOR_BGR2GRAY)
+
+    for key, templates in numbers.items():
+        maxMatch = 0
+
+        for template in templates:
+            template = cv.cvtColor(template.copy(), cv.COLOR_BGR2GRAY)
+
+            templateW, templateH               = template.shape
+
+            matchImg = img.copy()
+            matchRes = cv.matchTemplate(matchImg, template, method)
+            # showImage(img, 'Original')
+            # showImage(matchRes, 'Match')
+            _, resValue, _, _ = cv.minMaxLoc(matchRes)
+
+            maxMatch = max(maxMatch, resValue)
+        
+        maxima[key] = maxMatch
+    
+    maxKey, maxValue = max(maxima.items(), key=lambda item: item[1])
+
+    return maxKey
+
+def classifyRects(cropped, numberRects, digits):
+            # drawnRects = cropped.copy()
+        # for i, (x, y, w, h) in enumerate(numbers):
+        #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
+        # showImage(drawnRects, f'Bounding rects for img {n}')
+
+        numberRectsPadded = [padRect(rect, (rect[3] * 0.08), (rect[3] * 0.08)) for rect in numberRects]
+
+        # Defined by size of images in digits directory
+        minWidth, minHeight = 28, 40
+        digitsRatio = minWidth / minHeight
+
+        # Pad for aspect ratio
+        for i, numberRect in enumerate(numberRectsPadded):
+            _, _, w, h = numberRect
+            ratio = w / h
+
+            if ratio < digitsRatio:
+                padX = (h * digitsRatio) - w
+                numberRectsPadded[i] = padRect(numberRect, padX, 0)
+            else:
+                padY = (w / digitsRatio) - h
+                numberRectsPadded[i] = padRect(numberRect, 0, padY)
+        
+        def rectToRotRect(rect):
+            x, y, w, h = rect
+            return (x+(w/2), y+(h/2)), (w, h), 0
+
+        # Use the rects to crop out the number images
+        numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
+
+        # Scale to fit the matcher digits images
+        resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
+
+        actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs]
+
+        return tuple(actualNumbers)
 
 def task1(): 
     sep = os.path.sep
@@ -223,7 +289,7 @@ def task1():
         key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsName.items()
     }
 
-    for (n, img) in enumerate(trainImgs, start=1):
+    for n, img in enumerate(trainImgs, start=1):
 
         cropped = cropToNumbers(img)
 
@@ -232,32 +298,16 @@ def task1():
 
         numberRects = findNumbers(findEdges(cropped), relSizeThresh=0.006)
 
-        # drawnRects = cropped.copy()
-        # for i, (x, y, w, h) in enumerate(numbers):
-        #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
-        # showImage(drawnRects, f'Bounding rects for img {n}')
+        actualNumbers = classifyRects(cropped, numberRects, digits)
 
-        minWidth, minHeight = 28, 40
+        with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
+            a, b, c = actualNumbers
+            file.write(f'Building {a}{b}{c}')
+            # showImage(img, f'{a}{b}{c}')
 
-        numberRectsPadded = [padRect(rect, (rect[3] * 0.05), (rect[3] * 0.05)) for rect in numberRects]
-
-        def rectToRotRect(rect):
-            x, y, w, h = rect
-            return (x+(w/2), y+(h/2)), (w, h), 0
-
-        numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
-
-        resizedNumberImgs = [cv.resize(numImg, (28, 40)) for numImg in numberImgs]
-
-        for i, numberImg in enumerate(resizedNumberImgs, start=1):
-            showImage(numberImg, f'Img {n} number {i}')
-
-    # for digit, l in digits.items():
-    #     for i, digitImg in enumerate(l):
-    #         showImage(digitImg, f'Digit {digit} img {i + 1}')
-
-
-
+# for digit, l in digits.items():
+#     for i, digitImg in enumerate(l):
+#         showImage(digitImg, f'Digit {digit} img {i + 1}')
 
 # showImage(img, f'Image {n}')
 
