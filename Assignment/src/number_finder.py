@@ -211,8 +211,7 @@ def matchNum(img, digits):
     for key, templates in digits.items():
         maxMatch = 0
 
-        for lazyTemplate in templates:
-            template = lazyTemplate()
+        for template in templates:
             template = cv.cvtColor(template, cv.COLOR_BGR2GRAY)
 
             matchImg = img.copy()
@@ -244,12 +243,13 @@ def classifyRects(cropped, numberRects, digits):
             _, _, w, h = numberRect
             ratio = w / h
 
-            if ratio < digitsRatio:
-                padX = (h * digitsRatio) - w
-                numberRectsPadded[i] = padRect(numberRect, padX, 0)
-            else:
-                padY = (w / digitsRatio) - h
-                numberRectsPadded[i] = padRect(numberRect, 0, padY)
+            if ratio != digitsRatio:
+                if ratio < digitsRatio:
+                    padX = (h * digitsRatio) - w
+                    numberRectsPadded[i] = padRect(numberRect, padX, 0)
+                else:
+                    padY = (w / digitsRatio) - h
+                    numberRectsPadded[i] = padRect(numberRect, 0, padY)
         
         def rectToRotRect(rect):
             x, y, w, h = rect
@@ -266,10 +266,8 @@ def classifyRects(cropped, numberRects, digits):
         return tuple(actualNumbers)
 
 def task1(testImgs: List, outputDir: str, digitsDict: Dict): 
-    for n, img in enumerate(testImgs, start=1):
-        # Evaluate lazy value
-        img = img()
 
+    for n, img in enumerate(testImgs, start=1):
         cropped = cropToNumbers(img)
 
         # showImage(cropped, f'Cropped & rotated img {n}')

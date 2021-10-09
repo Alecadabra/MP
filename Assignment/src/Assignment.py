@@ -7,25 +7,45 @@ import number_finder
 def main():
     args = resolveArgs()
 
+    resolvePaths(args)
+
+    if args.task == 'task1':
+        number_finder.task1(
+            testImgs=args.testImgs,
+            outputDir=args.outputDir,
+            digitsDict=args.digitsDict
+        )
+    else: # task2
+        pass
+
+def resolvePaths(args):
+    # OS file path separator (\ or /)
     sep = os.path.sep
 
-    # Get the current project directory path
+    # Get the current project directory path (src/../)
     projDir = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
     
-    trainDir = args.train
-    task1TrainDir = f'{trainDir}task1{sep}'
-    task2TrainDir = f'{trainDir}task2{sep}'
+    # Directory of images to test
+    if args.task == 'task1':
+        testDir = f'{args.test}{sep}task1{sep}'
+    else:
+        testDir = f'{args.test}{sep}task2{sep}'
 
-    outputDir = args.output
-    task1OutputDir = f'{outputDir}task1{sep}'
-    task2OutputDir = f'{outputDir}task2{sep}'
+    # Directory for output of program
+    if args.task == 'task1':
+        args.outputDir = f'{args.output}{sep}task1{sep}'
+    else:
+        args.outputDir = f'{args.output}{sep}task2{sep}'
 
+    # Number of images under test directory
     numTrain = args.num
-    task1TestImgs = [lambda: cv.imread(f'{trainDir}BS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
-    task2TestImgs = [lambda: cv.imread(f'{trainDir}DS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
+    # Images to test
+    if args.task == 'task1':
+        args.testImgs = [cv.imread(f'{testDir}BS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
+    else:
+        args.testImgs = [cv.imread(f'{testDir}DS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
 
     digitsDir = f'{projDir}digits{sep}'
-
     digitsDict = {
         0: 'Zero',
         1: 'One',
@@ -40,20 +60,10 @@ def main():
         'l': 'LeftArrow',
         'r': 'RightArrow'
     }
-
-    # Maps from a key from digitsDict to a list of lambdas to read that image
-    digitsDict = {
-        key: [lambda: cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsDict.items()
+    # Maps from a key from digitsDict to a list template images
+    args.digitsDict = {
+        key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsDict.items()
     }
-
-    if args.task == 'task1':
-        number_finder.task1(
-            testImgs=task1TestImgs,
-            outputDir=outputDir,
-            digitsDict=digitsDict
-        )
-    else: # task2
-        pass
 
 def resolveArgs():
     parser = argparse.ArgumentParser(
