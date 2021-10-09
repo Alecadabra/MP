@@ -1,5 +1,5 @@
 from types import LambdaType
-from typing import Iterable, Union
+from typing import Dict, Iterable, List, Tuple, Union
 import cv2 as cv
 import numpy as np
 import os
@@ -7,49 +7,45 @@ from matplotlib import pyplot as plt
 import random
 from itertools import permutations
 
-def showImage(img, name):
+def showImage(img, name: str):
+    '''Shows an image mat using cv.imshow.'''
     cv.imshow(name, img)
     cv.waitKey(0)
     cv.destroyAllWindows()
 
-def plotImage(img, name):
-    imgFlat = img.flatten()
-    hist, = np.histogram(imgFlat, 256, [0, 256])[:-1]
-    cdf = hist.cumsum()
-    cdfNormalised = cdf * hist.max() / cdf.max()
-
-    plt.figure(name)
-    plt.plot(cdfNormalised, color = 'b')
-    plt.hist(imgFlat, 256, [0, 256], color = 'r')
-    plt.xlim([0, 256])
-    plt.legend(('cdf', 'histogram'), loc = 'upper left')
-    plt.show()
-
-def randomColour():
+def randomColour() -> Tuple[int, int, int]:
+    '''Randomly generates a colour as a tuple of three values from 0 to 255.'''
     return tuple([random.randint(0, 0xff) for _ in range(3)])
 
 def aspectRatio(contour):
+    '''Computes the aspect ratio of a contour's bounding rectange
+    (width / height).'''
     _, _, width, height = cv.boundingRect(contour)
 
     return width / height if height != 0 else 0
 
 def solidity(contour):
+    '''Computes the solidity of a contour. (Area / Area of convex hull).'''
     hull = cv.convexHull(contour)
     hullArea = cv.contourArea(hull)
 
     return cv.contourArea(contour) / hullArea if hullArea != 0 else 0
 
 def rectangularity(contour):
+    '''Computes the 'rectangularity' of a contour. (Area / Area of bounding
+    box).'''
     box = boxContour(contour)
     boxArea = cv.contourArea(box)
     
     return cv.contourArea(contour) / boxArea if boxArea != 0 else 0
 
 def boxContour(contour):
+    '''Gets the non-rotated bounding rectangle of a contour, as a contour.'''
     x, y, w, h = cv.boundingRect(contour)
     return np.int0([(x, y), (x+w, y), (x+w, y+h), (x, y+h)])
 
 def drawContours(img, contours, thickness=2):
+    '''Draws the given contours over a source image.'''
     destImg = img.copy()
 
     for i in range(len(contours)):
@@ -58,6 +54,8 @@ def drawContours(img, contours, thickness=2):
     return destImg
 
 def findEdges(img, gaussian=3, t1=300, t2=400):
+    '''Applys the Canny edge detector to an image with preset values and
+    preprocessing.'''
     blurred = cv.GaussianBlur(img, (gaussian, gaussian), 0)
     greyBlurred = cv.cvtColor(blurred, cv.COLOR_BGR2GRAY)
     edges = cv.Canny(greyBlurred, t1, t2)
@@ -65,6 +63,8 @@ def findEdges(img, gaussian=3, t1=300, t2=400):
     return edges
 
 def relativeSize(img, contour):
+    '''Computes the relative size of a contour as a proportion of the source
+    image size.'''
     imgWidth, imgHeight = img.shape[:2]
     _, _, cntWidth, cntHeight = cv.boundingRect(contour)
 
@@ -73,16 +73,18 @@ def relativeSize(img, contour):
 
     return contourArea / imgArea if imgArea != 0 else 0
 
-# Find permutation with smallest differences in y values
-# Finds the average differences between elements in an iterable, given 
-# a mapping function
 def avgDifference(iterable: Iterable, key: LambdaType):
-    return sum(map(
-        lambda x: key(x),
-        permutations(iterable, 2)
-    )) / len(list(permutations(iterable, 2)))
+    '''Finds the average differences between elements in an iterable, given 
+    a mapping function'''
+    total = sum([key(x) for x in permutations(iterable, 3)])
+    numElements = len(list(permutations(iterable, 2)))
+
+    return total / numElements
 
 def cropImg(img, rotRect):
+    '''Crops a given image mat to a rotated rectange, using it's angle.
+    `rotRect` can be sourced from cv.minAreaRec and is a tuple of format
+    `(x, y), (width, height), angle`.'''
     _, (width, height), _ = rotRect
     rotBoundingCont = np.int0(cv.boxPoints(rotRect))
     points = rotBoundingCont.astype('float32')
@@ -102,6 +104,8 @@ def cropImg(img, rotRect):
     return cropped
 
 def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
+    '''The full algorithm to find the three building numbers from an image,
+    as a tuple of bounding rectangles (Tuples of `x, y, width, height`).'''
     _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
     filteredContours = [c for c in contours if relativeSize(edges, c) > relSizeThresh]
@@ -137,13 +141,16 @@ def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
 
     return perm
 
-def numberAngle(numbers):
+def numberAngle(numbers: Tuple):
+    '''Takes in a tuple of three bounding rects and finds the angle they slant
+    at.'''
     angleOpp = ((numbers[2][0] + numbers[2][2]) - numbers[0][0])
     angleAdj = ((numbers[2][1] + numbers[2][3]) - (numbers[0][1] + numbers[0][3]))
     
     return np.arctan(angleOpp / angleAdj) if angleAdj != 0 else 0
 
 def padRect(rect, padX, padY):
+    '''Takes in a bounding rectangle and pads it on x and y.'''
     padX = round(padX)
     padY = round(padY)
     boundingRect = (
@@ -155,6 +162,8 @@ def padRect(rect, padX, padY):
     return boundingRect
 
 def cropToNumbers(img):
+    '''The full algorithm to take in an edges image and crop it to just the
+    area of the numbers. To actually find the numbers it uses `findNumbers`.'''
     edges = findEdges(img)
 
     numberRects = findNumbers(edges)
@@ -191,36 +200,35 @@ def cropToNumbers(img):
 
     return cropped
 
-def matchNum(img, numbers):
+def matchNum(img, digits):
+    '''Takes in a source image and map from desired values to lists of image
+    templates, and uses it to classify the source image as one of the digits.'''
     method = cv.TM_CCOEFF_NORMED
-    maxima = {value: 0 for value in numbers.keys()}
+    maxima = {value: 0 for value in digits.keys()}
 
     img = cv.cvtColor(img.copy(), cv.COLOR_BGR2GRAY)
 
-    for key, templates in numbers.items():
+    for key, templates in digits.items():
         maxMatch = 0
 
-        for template in templates:
-            template = cv.cvtColor(template.copy(), cv.COLOR_BGR2GRAY)
-
-            templateW, templateH               = template.shape
+        for lazyTemplate in templates:
+            template = lazyTemplate()
+            template = cv.cvtColor(template, cv.COLOR_BGR2GRAY)
 
             matchImg = img.copy()
             matchRes = cv.matchTemplate(matchImg, template, method)
-            # showImage(img, 'Original')
-            # showImage(matchRes, 'Match')
             _, resValue, _, _ = cv.minMaxLoc(matchRes)
 
             maxMatch = max(maxMatch, resValue)
         
         maxima[key] = maxMatch
     
-    maxKey, maxValue = max(maxima.items(), key=lambda item: item[1])
+    maxKey, _ = max(maxima.items(), key=lambda item: item[1])
 
     return maxKey
 
 def classifyRects(cropped, numberRects, digits):
-            # drawnRects = cropped.copy()
+        # drawnRects = cropped.copy()
         # for i, (x, y, w, h) in enumerate(numbers):
         #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
         # showImage(drawnRects, f'Bounding rects for img {n}')
@@ -257,39 +265,10 @@ def classifyRects(cropped, numberRects, digits):
 
         return tuple(actualNumbers)
 
-def task1(): 
-    sep = os.path.sep
-    # Get the current project directory path
-    projDir = f'{os.path.dirname(os.path.abspath(__file__))}{sep}..{sep}'
-    
-    trainDir = f'{projDir}train{sep}task1{sep}'
-
-    outputDir = f'{projDir}output{sep}task1{sep}'
-
-    trainImgs = [cv.imread(f'{trainDir}BS{imgNum:02d}.jpg') for imgNum in range(1, 22)]
-
-    digitsDir = f'{projDir}digits{sep}'
-
-    digitsName = {
-        0: 'Zero',
-        1: 'One',
-        2: 'Two',
-        3: 'Three',
-        4: 'Four',
-        5: 'Five',
-        6: 'Six',
-        7: 'Seven',
-        8: 'Eight',
-        9: 'Nine',
-        'l': 'LeftArrow',
-        'r': 'RightArrow'
-    }
-
-    digits = {
-        key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsName.items()
-    }
-
-    for n, img in enumerate(trainImgs, start=1):
+def task1(testImgs: List, outputDir: str, digitsDict: Dict): 
+    for n, img in enumerate(testImgs, start=1):
+        # Evaluate lazy value
+        img = img()
 
         cropped = cropToNumbers(img)
 
@@ -298,7 +277,7 @@ def task1():
 
         numberRects = findNumbers(findEdges(cropped), relSizeThresh=0.006)
 
-        actualNumbers = classifyRects(cropped, numberRects, digits)
+        actualNumbers = classifyRects(cropped, numberRects, digitsDict)
 
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
             a, b, c = actualNumbers
