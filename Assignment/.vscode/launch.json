@@ -5,6 +5,14 @@
     "version": "0.2.0",
     "configurations": [        
         {
+            "name": "Assignment: Task 2",
+            "type": "python",
+            "request": "launch",
+            "program": "src\\Assignment.py",
+            "console": "integratedTerminal",
+            "args": ["task2", "-t", "train", "-n", "21", "-o", "output"]
+        },
+        {
             "name": "Assignment: Task 1",
             "type": "python",
             "request": "launch",

@@ -5,8 +5,10 @@ import cv2 as cv
 import number_finder
 
 def main():
+    # Resolve command line args
     args = resolveArgs()
 
+    # Use args to parse required data
     resolvePaths(args)
 
     if args.task == 'task1':
@@ -16,7 +18,11 @@ def main():
             digitsDict=args.digitsDict
         )
     else: # task2
-        pass
+        number_finder.task2(
+            testImgs=args.testImgs,
+            outputDir=args.outputDir,
+            digitsDict=args.digitsDict
+        )
 
 def resolvePaths(args):
     # OS file path separator (\ or /)
@@ -36,6 +42,8 @@ def resolvePaths(args):
         args.outputDir = f'{args.output}{sep}task1{sep}'
     else:
         args.outputDir = f'{args.output}{sep}task2{sep}'
+    # Ensure the output directory exists
+    os.makedirs(args.outputDir, exist_ok=True)
 
     # Number of images under test directory
     numTrain = args.num

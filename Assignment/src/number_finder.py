@@ -76,7 +76,7 @@ def relativeSize(img, contour):
 def avgDifference(iterable: Iterable, key: LambdaType):
     '''Finds the average differences between elements in an iterable, given 
     a mapping function'''
-    total = sum([key(x) for x in permutations(iterable, 3)])
+    total = sum([key(x[0], x[1]) for x in permutations(iterable, 2)])
     numElements = len(list(permutations(iterable, 2)))
 
     return total / numElements
@@ -129,8 +129,8 @@ def findNumbers(edges, relSizeThresh=0.0006, minRatio=0.4, maxRatio=0.8):
     thresh = 10
     while (len(filteredPerms) == 0):
         filteredPerms = [p for p in perms if 
-            avgDifference(p, lambda pp: abs(pp[0][1] - pp[1][1])) < thresh and
-            avgDifference(p, lambda pp: abs((pp[0][1] + pp[0][3]) - (pp[1][1] + pp[1][3]))) < thresh
+            avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
+            avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh
         ]
         thresh += 1
 
@@ -266,7 +266,6 @@ def classifyRects(cropped, numberRects, digits):
         return tuple(actualNumbers)
 
 def task1(testImgs: List, outputDir: str, digitsDict: Dict): 
-
     for n, img in enumerate(testImgs, start=1):
         cropped = cropToNumbers(img)
 
@@ -281,6 +280,73 @@ def task1(testImgs: List, outputDir: str, digitsDict: Dict):
             a, b, c = actualNumbers
             file.write(f'Building {a}{b}{c}')
             # showImage(img, f'{a}{b}{c}')
+
+def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0.8):
+    _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+
+    filteredContours = [c for c in contours if relativeSize(edges, c) > relSizeThresh]
+
+    filteredContours = [c for c in filteredContours if minRatio < aspectRatio(c) < maxRatio]
+
+    rects = [cv.boundingRect(c) for c in filteredContours]
+
+    sortedRects = rects
+    sortedRects = sorted(sortedRects, key=lambda c: c[3])
+
+    perms = permutations(rects, 3)
+    # Filter to only get left to right perms
+    perms = [p for p in perms if p[0][0] < p[1][0] < p[2][0] and #< p[3][0] and
+        (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2])# < (p[3][0] + p[3][2])
+    ]
+
+    ### WORKING HERE
+
+    # Filter to only get perms of similar heights and y values to each other
+    # Loop until the filtered list is non-empty
+    # filteredPerms = []
+    # thresh = 10
+    # while len(filteredPerms) < 4:
+    #     filteredPerms = [p for p in perms if 
+    #         avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
+    #         avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh and
+    #         avgDifference(p, lambda a, b: abs(a[0] + a[2] - b[0])) < thresh * 2# and
+    #         # (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3]) + (p[3][2] * p[3][3]) > thresh * 2
+    #     ]
+    #     thresh += 1
+    #     print('thresh: ', thresh)
+
+    return perms
+
+def task2(testImgs: List, outputDir: str, digitsDict: Dict):
+    for n, img in enumerate(testImgs, start=1):
+        # showImage(img, f'Img {n}')5
+
+        edges = findEdges(img, t1=200, t2=300)
+        # showImage(edges, 'edges')
+
+        numberRectsList = findNumbersDirectional(edges)
+
+        drawn = img.copy()
+        for numberRects in numberRectsList:
+            colour = randomColour()
+            for numberRect in numberRects:
+                x, y, w, h = numberRect
+                drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=colour, thickness=2)
+        showImage(drawn, f'nums {n}')
+
+
+        # _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+
+        # polys = [cv.approxPolyDP(cv.convexHull(contour), 1, True) for contour in contours if relativeSize(img, contour) > 0.0005]
+        # showImage(drawContours(img, polys), 'Polys')
+
+        # numberRects = findNumbers(edges)
+        # drawn = img.copy()
+        # for rect in numberRects:
+        #     x, y, w, h = rect
+        #     drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), randomColour(), thickness=2)
+        # showImage(drawn, 'rect')
+
 
 # for digit, l in digits.items():
 #     for i, digitImg in enumerate(l):
