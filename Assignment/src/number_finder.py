@@ -303,40 +303,18 @@ def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0
     # Filter to only get perms of similar heights and y values to each other
     # Loop until the filtered list is non-empty
     filteredPerms = []
-    thresh = 1
+    imgThresh = 0
     while len(filteredPerms) == 0:
+        imgThresh += 1
+
         filteredPerms = [p for p in perms if 
-            avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
-            avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh and
-            p[0][0] + p[0][2] - p[1][0] < thresh and
-            p[1][0] + p[1][2] - p[2][0] < thresh
+            avgDifference(p, lambda a, b: abs(a[1] - b[1])) < imgThresh and
+            avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < imgThresh and
+            p[0][0] + p[0][2] - p[1][0] < imgThresh and
+            p[1][0] + p[1][2] - p[2][0] < imgThresh
         ]
-        print(thresh)
-        thresh += 1
 
-    perm = max(
-        filteredPerms,
-        key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
-    )
-
-    return perm
-
-    # Filter to only get perms of similar heights and y values to each other
-    # Loop until the filtered list is non-empty
-    # filteredPerms = []
-    # thresh = 10
-    # while (len(filteredPerms) == 0):
-    #     filteredPerms = [p for p in perms if 
-    #         avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
-    #         avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh
-    #     ]
-    #     thresh += 1
-
-    # perms = sorted(
-    #     filteredPerms,
-    #     key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3]),
-    #     reverse=True
-    # )[:1]
+    return filteredPerms
 
 def task2(testImgs: List, outputDir: str, digitsDict: Dict):
     for n, img in enumerate(testImgs, start=1):
@@ -345,12 +323,14 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
         edges = findEdges(img)
         # showImage(edges, 'edges')
 
-        numberRects = findNumbersDirectional(edges)
+        numberRectGroups = findNumbersDirectional(edges)
 
         drawn = img.copy()
-        for numberRect in numberRects:
-            x, y, w, h = numberRect
-            drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=randomColour(), thickness=2)
+        for numberRects in numberRectGroups:
+            color = randomColour()
+            for numberRect in numberRects:
+                x, y, w, h = numberRect
+                drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=color, thickness=2)
         showImage(drawn, f'nums {n}')
 
 
