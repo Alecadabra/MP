@@ -6,7 +6,8 @@ import os
 from matplotlib import pyplot as plt
 import random
 from itertools import permutations
-from functools import reduce
+from statistics import median, mean
+from collections import OrderedDict
 
 def showImage(img, name: str):
     '''Shows an image mat using cv.imshow.'''
@@ -226,12 +227,18 @@ def matchNum(img, digits):
     maxKey, _ = max(maxima.items(), key=lambda item: item[1])
 
     return maxKey
+        
+def rectToRotRect(rect):
+    x, y, w, h = rect
+    return (x+(w/2), y+(h/2)), (w, h), 0
 
 def classifyRects(cropped, numberRects, digits):
         # drawnRects = cropped.copy()
         # for i, (x, y, w, h) in enumerate(numbers):
         #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
         # showImage(drawnRects, f'Bounding rects for img {n}')
+
+        digits = {k: v for k, v in digits.items() if k != 'l' and k != 'r'}
 
         numberRectsPadded = [padRect(rect, (rect[3] * 0.08), (rect[3] * 0.08)) for rect in numberRects]
 
@@ -251,10 +258,7 @@ def classifyRects(cropped, numberRects, digits):
                 else:
                     padY = (w / digitsRatio) - h
                     numberRectsPadded[i] = padRect(numberRect, 0, padY)
-        
-        def rectToRotRect(rect):
-            x, y, w, h = rect
-            return (x+(w/2), y+(h/2)), (w, h), 0
+
 
         # Use the rects to crop out the number images
         numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
@@ -314,6 +318,9 @@ def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0
             p[1][0] + p[1][2] - p[2][0] < imgThresh
         ]
 
+    # Sort by y value
+    filteredPerms = sorted(filteredPerms, key=lambda p: p[0][1])
+
     return filteredPerms
 
 def task2(testImgs: List, outputDir: str, digitsDict: Dict):
@@ -329,12 +336,92 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
         for numberRects in numberRectGroups:
             color = randomColour()
             for numberRect in numberRects:
-                x, y, w, h = numberRect
-                drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=color, thickness=2)
-        showImage(drawn, f'nums {n}')
+                bx, by, bw, bh = numberRect
+                drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=color, thickness=2)
+        # showImage(drawn, f'nums {n}')
 
+        pad = round((sum(sum(pp[3] for pp in p) / 3 for p in numberRectGroups) / len(numberRectGroups)) * 0.1)
+        firstRects = numberRectGroups[0]
+        lastRects = numberRectGroups[len(numberRectGroups) - 1]
+        boundingRect = (
+            round(median(p[0][0] for p in numberRectGroups)) - pad,
+            round(mean(pp[1] for pp in firstRects) - pad),
+            round((lastRects[2][0] + lastRects[2][2]) - firstRects[0][0] + pad * 2 + firstRects[0][2] * 2.5),
+            lastRects[2][1] + lastRects[2][3] - firstRects[0][1] + pad * 2
+        )
 
-            
+        drawn = img.copy()
+        bx, by, bw, bh = boundingRect
+        drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=randomColour(), thickness=2)
+        # showImage(drawn, f'bounding img {n}')
+
+        angle = mean(numberAngle(p) for p in numberRectGroups)
+
+        rotBounding = (bx+(bw/2), by+(bh/2)), (bw, bh), angle
+
+        cropped = cropImg(img.copy(), rotBounding)
+        # showImage(cropped, f'cropped img {n}')
+        cv.imwrite(f'{outputDir}DetectedArea{n:02d}.jpg', cropped)
+
+        numberRectGroups = findNumbersDirectional(findEdges(cropped))
+        # drawn = cropped.copy()
+        # for numberRects in numberRectGroups:
+        #     color = randomColour()
+        #     for numberRect in numberRects:
+        #         bx, by, bw, bh = numberRect
+        #         drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=color, thickness=2)
+        # showImage(drawn, f'nums {n}')
+        
+        digits = {k: v for k, v in digitsDict.items() if k != 'l' and k != 'r'}
+
+        numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.28, pp[3] * 0.28) for pp in p] for p in numberRectGroups]
+        
+        # Defined by size of images in digits directory
+        minWidth, minHeight = 28, 40
+        digitsRatio = minWidth / minHeight
+
+        actualNumbersGroup = []
+
+        for numberRectsPadded in numberRectGroupsPadded:
+            for j, numberRect in enumerate(numberRectsPadded):
+                _, _, w, h = numberRect
+                ratio = w / h
+
+                if ratio != digitsRatio:
+                    if ratio < digitsRatio:
+                        padX = (h * digitsRatio) - w
+                        numberRectsPadded[j] = padRect(numberRect, padX, 0)
+                    else:
+                        padY = (w / digitsRatio) - h
+                        numberRectsPadded[j] = padRect(numberRect, 0, padY)
+                
+            # Use the rects to crop out the number images
+            numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
+
+            # Scale to fit the matcher digits images
+            resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
+
+            actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs]
+
+            actualNumbersGroup.append(actualNumbers)
+        
+        actualNumbersGroupUnique = []
+        for numbers in actualNumbersGroup:
+            if numbers not in actualNumbersGroupUnique:
+                actualNumbersGroupUnique.append(numbers)
+
+        with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
+            for actualNumbers in actualNumbersGroupUnique:
+                a, b, c = actualNumbers
+                file.write(f'Building {a}{b}{c} to the left\n')
+
+        #     s = ''
+        #     for num in actualNumbers:
+        #         s = f'{s}{num}'
+        #     print(s)
+        # showImage(drawn, f'img {n}')
+        # print('\nNext\n')
+
         # _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
         # polys = [cv.approxPolyDP(cv.convexHull(contour), 1, True) for contour in contours if relativeSize(img, contour) > 0.0005]
