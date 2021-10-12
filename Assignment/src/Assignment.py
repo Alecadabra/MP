@@ -9,7 +9,7 @@ def main():
     args = resolveArgs()
 
     # Use args to parse required data
-    resolvePaths(args)
+    args = resolvePaths(args)
 
     if args.task == 'task1':
         number_finder.task1(
@@ -72,6 +72,8 @@ def resolvePaths(args):
     args.digitsDict = {
         key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsDict.items()
     }
+
+    return args
 
 def resolveArgs():
     parser = argparse.ArgumentParser(

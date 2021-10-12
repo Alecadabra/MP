@@ -6,6 +6,7 @@ import os
 from matplotlib import pyplot as plt
 import random
 from itertools import permutations
+from functools import reduce
 
 def showImage(img, name: str):
     '''Shows an image mat using cv.imshow.'''
@@ -15,7 +16,7 @@ def showImage(img, name: str):
 
 def randomColour() -> Tuple[int, int, int]:
     '''Randomly generates a colour as a tuple of three values from 0 to 255.'''
-    return tuple([random.randint(0, 0xff) for _ in range(3)])
+    return tuple([random.randint(0x80, 0xff) for _ in range(3)])
 
 def aspectRatio(contour):
     '''Computes the aspect ratio of a contour's bounding rectange
@@ -295,46 +296,65 @@ def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0
 
     perms = permutations(rects, 3)
     # Filter to only get left to right perms
-    perms = [p for p in perms if p[0][0] < p[1][0] < p[2][0] and #< p[3][0] and
-        (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2])# < (p[3][0] + p[3][2])
+    perms = [p for p in perms if p[0][0] < p[1][0] < p[2][0] and
+        (p[0][0] + p[0][2]) < (p[1][0] + p[1][2]) < (p[2][0] + p[2][2])
     ]
 
-    ### WORKING HERE
+    # Filter to only get perms of similar heights and y values to each other
+    # Loop until the filtered list is non-empty
+    filteredPerms = []
+    thresh = 1
+    while len(filteredPerms) == 0:
+        filteredPerms = [p for p in perms if 
+            avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
+            avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh and
+            p[0][0] + p[0][2] - p[1][0] < thresh and
+            p[1][0] + p[1][2] - p[2][0] < thresh
+        ]
+        print(thresh)
+        thresh += 1
+
+    perm = max(
+        filteredPerms,
+        key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3])
+    )
+
+    return perm
 
     # Filter to only get perms of similar heights and y values to each other
     # Loop until the filtered list is non-empty
     # filteredPerms = []
     # thresh = 10
-    # while len(filteredPerms) < 4:
+    # while (len(filteredPerms) == 0):
     #     filteredPerms = [p for p in perms if 
     #         avgDifference(p, lambda a, b: abs(a[1] - b[1])) < thresh and
-    #         avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh and
-    #         avgDifference(p, lambda a, b: abs(a[0] + a[2] - b[0])) < thresh * 2# and
-    #         # (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3]) + (p[3][2] * p[3][3]) > thresh * 2
+    #         avgDifference(p, lambda a, b: abs((a[1] + a[3]) - (b[1] + b[3]))) < thresh
     #     ]
     #     thresh += 1
-    #     print('thresh: ', thresh)
 
-    return perms
+    # perms = sorted(
+    #     filteredPerms,
+    #     key=lambda p: (p[0][2] * p[0][3]) + (p[1][2] * p[1][3]) + (p[2][2] * p[2][3]),
+    #     reverse=True
+    # )[:1]
 
 def task2(testImgs: List, outputDir: str, digitsDict: Dict):
     for n, img in enumerate(testImgs, start=1):
         # showImage(img, f'Img {n}')5
 
-        edges = findEdges(img, t1=200, t2=300)
+        edges = findEdges(img)
         # showImage(edges, 'edges')
 
-        numberRectsList = findNumbersDirectional(edges)
+        numberRects = findNumbersDirectional(edges)
 
         drawn = img.copy()
-        for numberRects in numberRectsList:
-            colour = randomColour()
-            for numberRect in numberRects:
-                x, y, w, h = numberRect
-                drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=colour, thickness=2)
+        for numberRect in numberRects:
+            x, y, w, h = numberRect
+            drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), color=randomColour(), thickness=2)
         showImage(drawn, f'nums {n}')
 
 
+            
         # _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
 
         # polys = [cv.approxPolyDP(cv.convexHull(contour), 1, True) for contour in contours if relativeSize(img, contour) > 0.0005]
