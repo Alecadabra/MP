@@ -22,8 +22,6 @@ def task1(
         # Crop the image to the area containing the building number
         cropped = _cropToNumbers(img)
 
-        # showImage(cropped, f'Cropped & rotated img {n}')
-
         cv.imwrite(f'{outputDir}DetectedArea{n:02d}.jpg', cropped)
 
         # Find the numbers within the cropped area
@@ -40,8 +38,6 @@ def task1(
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
             a, b, c = actualNumbers
             file.write(f'Building {a}{b}{c}')
-
-            # showImage(img, f'{a}{b}{c}')
 
 def task2(
     testImgs: List[Any],
@@ -115,7 +111,7 @@ def _findNumbers(
     # Filter to only get perms of similar heights and y values to each other
     # Loop until the filtered list is non-empty
     filteredPerms = []
-    thresh = 10
+    thresh = 6
     while (len(filteredPerms) == 0):
         filteredPerms = [p for p in perms if 
             _avgDiff(p, lambda a, b: abs(a[1] - b[1])) < thresh and
@@ -200,12 +196,6 @@ def _cropToNumbers(img: Any) -> Any:
     # to right order
     numberRects = _findNumbers(edges)
 
-    # drawnRects = img.copy()
-    # for i, (x, y, w, h) in enumerate(numberRects):
-    #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), 
-    # color=randomColour(), thickness=2)
-    # showImage(drawnRects, f'Bounding rects for img {n}')
-
     # Find the angle that these numbers are skewed at
     angle = _numberAngle(numberRects)
 
@@ -221,19 +211,6 @@ def _cropToNumbers(img: Any) -> Any:
     # Rotate the rectangle by the computed angle
     bx, by, bw, bh = boundingRect
     rotBounding = (bx+(bw/2), by+(bh/2)), (bw, bh), angle
-
-    # drawnBounding = img.copy()
-    # drawnBounding = cv.rectangle(drawnBounding, (bx, by), (bx+bw, by+bh), 
-    # randomColour(), thickness=2)
-    # showImage(drawnBounding, f'Enclosing box for img {n}, angle: {angle}')
-
-    # rotBoundingCont = np.int0(cv.boxPoints(((bx+(bw/2), by+(bh/2)), (bw, bh), 
-    # angle)))
-    # drawnRotBounding = drawContours(img, [rotBoundingCont])
-    # showImage(drawnRotBounding, f'Rotated enclosing box for img {n}')
-
-    # rotatedImg = cropImg(img.copy(), angle)
-    # showImage(rotatedImg, f'Rotated enclosing box for img {n}')
 
     # Crop the original image to this rotated rectangle
     cropped = _cropImg(img, rotBounding)
@@ -288,12 +265,6 @@ def _classifyRects(
     boxes of the numbers, and a digit classificaiton map, and return the
     true digits.'''
 
-    # drawnRects = cropped.copy()
-    # for i, (x, y, w, h) in enumerate(numbers):
-    #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h),
-    # color=randomColour(), thickness=2)
-    # showImage(drawnRects, f'Bounding rects for img {n}')
-
     # Pad the number rectangles a bit
     numberRectsPadded = [(
         _padRect(rect, (rect[3] * 0.08), (rect[3] * 0.08))
@@ -315,7 +286,6 @@ def _classifyRects(
             else:
                 padY = (w / templateRatio) - h
                 numberRectsPadded[i] = _padRect(numberRect, 0, padY)
-
 
     # Use the rects to crop out the number images
     numberImgs = [
@@ -469,16 +439,6 @@ def _matchNum(
     return maxKey
   
 # Utilities --------------------------------------------------------------------
-
-def _showImage(img: Any, name: str) -> None:
-    '''Shows an image mat using cv.imshow.'''
-    cv.imshow(name, img)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
-
-def _randomColour() -> Tuple[int, int, int]:
-    '''Randomly generates a colour as a tuple of three values from 0 to 255.'''
-    return tuple([random.randint(0x80, 0xff) for _ in range(3)])
 
 def _aspectRatio(contour: Any) -> float:
     '''Computes the aspect ratio of a contour's bounding rectange
