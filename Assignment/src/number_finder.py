@@ -1,5 +1,5 @@
 from types import LambdaType
-from typing import Dict, Iterable, List, Tuple, Union
+from typing import Any, Dict, Iterable, List, Tuple, Union
 import cv2 as cv
 import numpy as np
 import os
@@ -200,6 +200,7 @@ def matchNum(img, digits):
     return maxKey
         
 def rectToRotRect(rect):
+    '''Converts a rect to a rotated rect'''
     x, y, w, h = rect
     return (x+(w/2), y+(h/2)), (w, h), 0
 
@@ -208,8 +209,6 @@ def classifyRects(cropped, numberRects, digits):
         # for i, (x, y, w, h) in enumerate(numbers):
         #     drawnRects = cv.rectangle(drawnRects, (x, y), (x + w, y + h), color=randomColour(), thickness=2)
         # showImage(drawnRects, f'Bounding rects for img {n}')
-
-        digits = {k: v for k, v in digits.items() if k != 'l' and k != 'r'}
 
         numberRectsPadded = [padRect(rect, (rect[3] * 0.08), (rect[3] * 0.08)) for rect in numberRects]
 
@@ -241,6 +240,71 @@ def classifyRects(cropped, numberRects, digits):
 
         return tuple(actualNumbers)
 
+def classifyRectsDirectional(cropped, rectGroups: List[List[tuple]], digits: Dict[int, Any], arrows: Dict[str, Any]) -> Tuple[List[List[int]], List[str]]:
+    numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.08, pp[3] * 0.08) for pp in p] for p in rectGroups]
+
+    # Add the arrow box
+    def arrowBox(p: tuple) -> tuple:
+        a, _, c = p
+        floatRect = (
+            c[0] + c[2] + (mean(pp[2] for pp in p)) * 0.3,
+            mean(pp[1] for pp in p),
+            (c[0] - a[0]) * 0.6,
+            mean(pp[2] for pp in p) * 1.4
+        )
+        return tuple(round(pp) for pp in floatRect)
+    numberRectGroupsPadded = [(p[0], p[1], p[2], arrowBox(p)) for p in numberRectGroupsPadded]
+    
+    # Defined by size of images in digits directory
+    minWidth, minHeight = 28, 40
+    digitsRatio = minWidth / minHeight
+
+    actualNumbersGroup = []
+    directionsGroup = []
+    visited = []
+
+    for numberRectsPadded in numberRectGroupsPadded:
+        newRects = []
+
+        if numberRectsPadded[0][:2] not in visited:
+
+            visited.append(numberRectsPadded[0][:2])
+
+            for numberRect in numberRectsPadded:
+                _, _, w, h = numberRect
+                ratio = w / h
+
+                if ratio != digitsRatio:
+                    if ratio < digitsRatio:
+                        padX = (h * digitsRatio) - w
+                        newRects.append(padRect(numberRect, padX, 0))
+                    else:
+                        padY = (w / digitsRatio) - h
+                        newRects.append(padRect(numberRect, 0, padY))
+                else:
+                    newRects.append(numberRect)
+                
+            # Use the rects to crop out the number images
+            numberImgs = [cropImg(cropped, rectToRotRect(rect)) for rect in newRects]
+
+            # Scale to fit the matcher digits images
+            resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
+
+            # Classify numbers
+            actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs[:-1]]
+
+            # Evil hack - replace middle 6's with 0's
+            actualNumbers = actualNumbers if actualNumbers[1] != 6 else (actualNumbers[0], 0, actualNumbers[2])
+            
+            direction = matchNum(resizedNumberImgs[-1], arrows)
+            directionStr = 'left' if direction == 'l' else 'right'
+
+            if actualNumbers not in actualNumbersGroup:
+                actualNumbersGroup.append(actualNumbers)
+                directionsGroup.append(directionStr)
+    
+    return actualNumbersGroup, directionsGroup
+
 def task1(testImgs: List, outputDir: str, digitsDict: Dict): 
     for n, img in enumerate(testImgs, start=1):
         cropped = cropToNumbers(img)
@@ -250,7 +314,9 @@ def task1(testImgs: List, outputDir: str, digitsDict: Dict):
 
         numberRects = findNumbers(findEdges(cropped), relSizeThresh=0.006)
 
-        actualNumbers = classifyRects(cropped, numberRects, digitsDict)
+        digits = {k: v for k, v in digitsDict.items() if k != 'l' and k != 'r'}
+
+        actualNumbers = classifyRects(cropped, numberRects, digits)
 
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
             a, b, c = actualNumbers
@@ -294,31 +360,36 @@ def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0
 
     return filteredPerms
 
+def cropToNumbersDirectional(img):
+    edges = findEdges(img)
+
+    numberRectGroups = findNumbersDirectional(edges)
+
+    pad = round((sum(sum(pp[3] for pp in p) / 3 for p in numberRectGroups) / len(numberRectGroups)) * 0.1)
+    firstRects = numberRectGroups[0]
+    lastRects = numberRectGroups[len(numberRectGroups) - 1]
+    boundingRect = (
+        round(median(p[0][0] for p in numberRectGroups)) - pad,
+        round(mean(pp[1] for pp in firstRects) - pad),
+        round((lastRects[2][0] + lastRects[2][2]) - firstRects[0][0] + pad * 2 + firstRects[0][2] * 2.5),
+        lastRects[2][1] + lastRects[2][3] - firstRects[0][1] + pad * 2
+    )
+
+    bx, by, bw, bh = boundingRect
+
+    angle = mean(numberAngle(p) for p in numberRectGroups)
+
+    rotBounding = (bx+(bw/2), by+(bh/2)), (bw, bh), angle
+
+    cropped = cropImg(img.copy(), rotBounding)
+
+    return cropped
+
 def task2(testImgs: List, outputDir: str, digitsDict: Dict):
     for n, img in enumerate(testImgs, start=1):
 
-        edges = findEdges(img)
-
-        numberRectGroups = findNumbersDirectional(edges)
-
-        pad = round((sum(sum(pp[3] for pp in p) / 3 for p in numberRectGroups) / len(numberRectGroups)) * 0.1)
-        firstRects = numberRectGroups[0]
-        lastRects = numberRectGroups[len(numberRectGroups) - 1]
-        boundingRect = (
-            round(median(p[0][0] for p in numberRectGroups)) - pad,
-            round(mean(pp[1] for pp in firstRects) - pad),
-            round((lastRects[2][0] + lastRects[2][2]) - firstRects[0][0] + pad * 2 + firstRects[0][2] * 2.5),
-            lastRects[2][1] + lastRects[2][3] - firstRects[0][1] + pad * 2
-        )
-
-        bx, by, bw, bh = boundingRect
-
-        angle = mean(numberAngle(p) for p in numberRectGroups)
-
-        rotBounding = (bx+(bw/2), by+(bh/2)), (bw, bh), angle
-
-        cropped = cropImg(img.copy(), rotBounding)
-        # showImage(cropped, f'cropped img {n}')
+        cropped = cropToNumbersDirectional(img)
+        
         cv.imwrite(f'{outputDir}DetectedArea{n:02d}.jpg', cropped)
 
         numberRectGroups = findNumbersDirectional(findEdges(cropped))
@@ -326,67 +397,7 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
         digits = {k: v for k, v in digitsDict.items() if k != 'l' and k != 'r'}
         arrows = {k: v for k, v in digitsDict.items() if k == 'l' or k == 'r'}
 
-        numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.08, pp[3] * 0.08) for pp in p] for p in numberRectGroups]
-
-        # Add the arrow box
-        def arrowBox(p: tuple) -> tuple:
-            a, _, c = p
-            floatRect = (
-                c[0] + c[2] + (mean(pp[2] for pp in p)) * 0.3,
-                mean(pp[1] for pp in p),
-                (c[0] - a[0]) * 0.6,
-                mean(pp[2] for pp in p) * 1.4
-            )
-            return tuple(round(pp) for pp in floatRect)
-        numberRectGroupsPadded = [(p[0], p[1], p[2], arrowBox(p)) for p in numberRectGroupsPadded]
-        
-        # Defined by size of images in digits directory
-        minWidth, minHeight = 28, 40
-        digitsRatio = minWidth / minHeight
-
-        actualNumbersGroup = []
-        directionsGroup = []
-        visited = []
-
-        for i, numberRectsPadded in enumerate(numberRectGroupsPadded):
-            newRects = []
-
-            if numberRectsPadded[0][:2] not in visited:
-
-                visited.append(numberRectsPadded[0][:2])
-
-                for j, numberRect in enumerate(numberRectsPadded):
-                    _, _, w, h = numberRect
-                    ratio = w / h
-
-                    if ratio != digitsRatio:
-                        if ratio < digitsRatio:
-                            padX = (h * digitsRatio) - w
-                            newRects.append(padRect(numberRect, padX, 0))
-                        else:
-                            padY = (w / digitsRatio) - h
-                            newRects.append(padRect(numberRect, 0, padY))
-                    else:
-                        newRects.append(numberRect)
-                    
-                # Use the rects to crop out the number images
-                numberImgs = [cropImg(cropped, rectToRotRect(rect)) for rect in newRects]
-
-                # Scale to fit the matcher digits images
-                resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
-
-                # Classify numbers
-                actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs[:-1]]
-
-                # Evil hack - replace middle 6's with 0's
-                actualNumbers = actualNumbers if actualNumbers[1] != 6 else (actualNumbers[0], 0, actualNumbers[2])
-                
-                direction = matchNum(resizedNumberImgs[-1], arrows)
-                directionStr = 'left' if direction == 'l' else 'right'
-
-                if actualNumbers not in actualNumbersGroup:
-                    actualNumbersGroup.append(actualNumbers)
-                    directionsGroup.append(directionStr)
+        actualNumbersGroup, directionsGroup = classifyRectsDirectional(cropped, numberRectGroups, digits, arrows)
 
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
             for actualNumbers, direction in zip(actualNumbersGroup, directionsGroup):
