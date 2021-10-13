@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "src\\Assignment.py",
             "console": "integratedTerminal",
-            "args": ["task2", "-t", "train", "-n", "21", "-o", "output"]
+            "args": ["task2", "-t", "val", "-n", "10", "-o", "output"]
         },
         {
             "name": "Assignment: Task 1",
@@ -18,7 +18,7 @@
             "request": "launch",
             "program": "src\\Assignment.py",
             "console": "integratedTerminal",
-            "args": ["task1", "-t", "train", "-n", "21", "-o", "output"]
+            "args": ["task1", "-t", "val", "-n", "10", "-o", "output"]
         }
     ]
 }
