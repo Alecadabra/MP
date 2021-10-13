@@ -26,35 +26,6 @@ def aspectRatio(contour):
 
     return width / height if height != 0 else 0
 
-def solidity(contour):
-    '''Computes the solidity of a contour. (Area / Area of convex hull).'''
-    hull = cv.convexHull(contour)
-    hullArea = cv.contourArea(hull)
-
-    return cv.contourArea(contour) / hullArea if hullArea != 0 else 0
-
-def rectangularity(contour):
-    '''Computes the 'rectangularity' of a contour. (Area / Area of bounding
-    box).'''
-    box = boxContour(contour)
-    boxArea = cv.contourArea(box)
-    
-    return cv.contourArea(contour) / boxArea if boxArea != 0 else 0
-
-def boxContour(contour):
-    '''Gets the non-rotated bounding rectangle of a contour, as a contour.'''
-    x, y, w, h = cv.boundingRect(contour)
-    return np.int0([(x, y), (x+w, y), (x+w, y+h), (x, y+h)])
-
-def drawContours(img, contours, thickness=2):
-    '''Draws the given contours over a source image.'''
-    destImg = img.copy()
-
-    for i in range(len(contours)):
-        destImg = cv.drawContours(destImg, contours, i, randomColour(), thickness=thickness)
-
-    return destImg
-
 def findEdges(img, gaussian=3, t1=300, t2=400):
     '''Applys the Canny edge detector to an image with preset values and
     preprocessing.'''
@@ -325,20 +296,10 @@ def findNumbersDirectional(edges, relSizeThresh=0.0003, minRatio=0.4, maxRatio=0
 
 def task2(testImgs: List, outputDir: str, digitsDict: Dict):
     for n, img in enumerate(testImgs, start=1):
-        # showImage(img, f'Img {n}')5
 
         edges = findEdges(img)
-        # showImage(edges, 'edges')
 
         numberRectGroups = findNumbersDirectional(edges)
-
-        drawn = img.copy()
-        for numberRects in numberRectGroups:
-            color = randomColour()
-            for numberRect in numberRects:
-                bx, by, bw, bh = numberRect
-                drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=color, thickness=2)
-        # showImage(drawn, f'nums {n}')
 
         pad = round((sum(sum(pp[3] for pp in p) / 3 for p in numberRectGroups) / len(numberRectGroups)) * 0.1)
         firstRects = numberRectGroups[0]
@@ -350,10 +311,7 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
             lastRects[2][1] + lastRects[2][3] - firstRects[0][1] + pad * 2
         )
 
-        drawn = img.copy()
         bx, by, bw, bh = boundingRect
-        drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=randomColour(), thickness=2)
-        # showImage(drawn, f'bounding img {n}')
 
         angle = mean(numberAngle(p) for p in numberRectGroups)
 
@@ -364,29 +322,36 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
         cv.imwrite(f'{outputDir}DetectedArea{n:02d}.jpg', cropped)
 
         numberRectGroups = findNumbersDirectional(findEdges(cropped))
-        # drawn = cropped.copy()
-        # for numberRects in numberRectGroups:
-        #     color = randomColour()
-        #     for numberRect in numberRects:
-        #         bx, by, bw, bh = numberRect
-        #         drawn = cv.rectangle(drawn, (bx, by), (bx+bw, by+bh), color=color, thickness=2)
-        # showImage(drawn, f'nums {n}')
         
         digits = {k: v for k, v in digitsDict.items() if k != 'l' and k != 'r'}
+        arrows = {k: v for k, v in digitsDict.items() if k == 'l' or k == 'r'}
 
         numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.08, pp[3] * 0.08) for pp in p] for p in numberRectGroups]
+
+        # Add the arrow box
+        def arrowBox(p: tuple) -> tuple:
+            a, _, c = p
+            floatRect = (
+                c[0] + c[2] + (mean(pp[2] for pp in p)) * 0.3,
+                mean(pp[1] for pp in p),
+                (c[0] - a[0]) * 0.6,
+                mean(pp[2] for pp in p) * 1.4
+            )
+            return tuple(round(pp) for pp in floatRect)
+        numberRectGroupsPadded = [(p[0], p[1], p[2], arrowBox(p)) for p in numberRectGroupsPadded]
         
         # Defined by size of images in digits directory
         minWidth, minHeight = 28, 40
         digitsRatio = minWidth / minHeight
 
         actualNumbersGroup = []
+        directionsGroup = []
         visited = []
 
         for i, numberRectsPadded in enumerate(numberRectGroupsPadded):
             newRects = []
 
-            if all(numberRect[:2] not in visited for numberRect in numberRectsPadded):
+            if numberRectsPadded[0][:2] not in visited:
 
                 visited.append(numberRectsPadded[0][:2])
 
@@ -401,80 +366,29 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
                         else:
                             padY = (w / digitsRatio) - h
                             newRects.append(padRect(numberRect, 0, padY))
+                    else:
+                        newRects.append(numberRect)
                     
                 # Use the rects to crop out the number images
                 numberImgs = [cropImg(cropped, rectToRotRect(rect)) for rect in newRects]
 
                 # Scale to fit the matcher digits images
                 resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
+
+                # Classify numbers
+                actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs[:-1]]
+
+                # Evil hack - replace middle 6's with 0's
+                actualNumbers = actualNumbers if actualNumbers[1] != 6 else (actualNumbers[0], 0, actualNumbers[2])
                 
-                # [cv.imwrite(f'{outputDir}Temp{n}-{i}-{k}.jpg', img) for k, img in enumerate(resizedNumberImgs)]
+                direction = matchNum(resizedNumberImgs[-1], arrows)
+                directionStr = 'left' if direction == 'l' else 'right'
 
-                actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs]
-
-                actualNumbersGroup.append(actualNumbers)
+                if actualNumbers not in actualNumbersGroup:
+                    actualNumbersGroup.append(actualNumbers)
+                    directionsGroup.append(directionStr)
 
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
-            for actualNumbers in actualNumbersGroup:
+            for actualNumbers, direction in zip(actualNumbersGroup, directionsGroup):
                 a, b, c = actualNumbers
-                # file.write(f'Building {a}{b}{c} to the left\n')
-
-        #     s = ''
-        #     for num in actualNumbers:
-        #         s = f'{s}{num}'
-        #     print(s)
-        # showImage(drawn, f'img {n}')
-        # print('\nNext\n')
-
-        # _, contours, _ = cv.findContours(edges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-
-        # polys = [cv.approxPolyDP(cv.convexHull(contour), 1, True) for contour in contours if relativeSize(img, contour) > 0.0005]
-        # showImage(drawContours(img, polys), 'Polys')
-
-        # numberRects = findNumbers(edges)
-        # drawn = img.copy()
-        # for rect in numberRects:
-        #     x, y, w, h = rect
-        #     drawn = cv.rectangle(drawn, (x, y), (x+w, y+h), randomColour(), thickness=2)
-        # showImage(drawn, 'rect')
-
-
-# for digit, l in digits.items():
-#     for i, digitImg in enumerate(l):
-#         showImage(digitImg, f'Digit {digit} img {i + 1}')
-
-# showImage(img, f'Image {n}')
-
-# boxEdges = findEdges(img, t1=30, t2=50)
-# showImage(boxEdges, f'Edges for img {n}')
-
-# _, boxContours, _ = cv.findContours(boxEdges, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-# filteredBoxes = boxContours
-# # filteredBoxes = list(filter(lambda c: relativeSize(img, c) > 0.002, filteredBoxes))
-# filteredBoxes = list(filter(lambda c: rectangularity(c) > 0.7, filteredBoxes))
-# # filteredBoxes = list(filter(lambda c: 1.2 < aspectRatio(c) < 1.8, filteredBoxes))
-
-# drawnBox = drawContours(img, filteredBoxes)
-# showImage(drawnBox, f'Box for img {n}')
-
-
-# filteredContours = list(sorted(filteredContours, key=lambda c: relativeSize(img, c), reverse=True))[:3]
-
-# sortedContours = sorted(filteredContours, key=lambda contour: abs(solidity(contour) - 2), reverse=True)
-
-# drawnContours = drawContours(img, filteredContours)
-# showImage(drawnContours, f'Contours for img {n}')
-
-# hulls = [cv.convexHull(contour) for contour in contours]
-# drawnHulls = drawContours(img, hulls)
-# showImage(drawnHulls, f'Hulls for img {n}')
-
-
-### (x, y), (width, height), angle = cv.minAreaRec
-# rotRects = [np.int0(cv.boxPoints(cv.minAreaRect(contour))) for contour in contours]
-# drawnRotRects = drawContours(img, rotRects)
-# showImage(drawnRotRects, f'Min area rects for img {n}')
-
-# approxCurves = [cv.approxPolyDP(contour, 0.05 * cv.arcLength(contour, True), True) for contour in contours]
-# drawnApproxCurves = drawContours(img, approxCurves)
-# showImage(drawnApproxCurves, f'Approx curves for img {n}')
+                file.write(f'Building {a}{b}{c} to the {direction}\n')
