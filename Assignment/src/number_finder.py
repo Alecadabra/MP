@@ -374,46 +374,50 @@ def task2(testImgs: List, outputDir: str, digitsDict: Dict):
         
         digits = {k: v for k, v in digitsDict.items() if k != 'l' and k != 'r'}
 
-        numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.28, pp[3] * 0.28) for pp in p] for p in numberRectGroups]
+        numberRectGroupsPadded = [[padRect(pp, pp[3] * 0.08, pp[3] * 0.08) for pp in p] for p in numberRectGroups]
         
         # Defined by size of images in digits directory
         minWidth, minHeight = 28, 40
         digitsRatio = minWidth / minHeight
 
         actualNumbersGroup = []
+        visited = []
 
-        for numberRectsPadded in numberRectGroupsPadded:
-            for j, numberRect in enumerate(numberRectsPadded):
-                _, _, w, h = numberRect
-                ratio = w / h
+        for i, numberRectsPadded in enumerate(numberRectGroupsPadded):
+            newRects = []
 
-                if ratio != digitsRatio:
-                    if ratio < digitsRatio:
-                        padX = (h * digitsRatio) - w
-                        numberRectsPadded[j] = padRect(numberRect, padX, 0)
-                    else:
-                        padY = (w / digitsRatio) - h
-                        numberRectsPadded[j] = padRect(numberRect, 0, padY)
+            if all(numberRect[:2] not in visited for numberRect in numberRectsPadded):
+
+                visited.append(numberRectsPadded[0][:2])
+
+                for j, numberRect in enumerate(numberRectsPadded):
+                    _, _, w, h = numberRect
+                    ratio = w / h
+
+                    if ratio != digitsRatio:
+                        if ratio < digitsRatio:
+                            padX = (h * digitsRatio) - w
+                            newRects.append(padRect(numberRect, padX, 0))
+                        else:
+                            padY = (w / digitsRatio) - h
+                            newRects.append(padRect(numberRect, 0, padY))
+                    
+                # Use the rects to crop out the number images
+                numberImgs = [cropImg(cropped, rectToRotRect(rect)) for rect in newRects]
+
+                # Scale to fit the matcher digits images
+                resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
                 
-            # Use the rects to crop out the number images
-            numberImgs = [cropImg(cropped, rectToRotRect(numImg)) for numImg in numberRectsPadded]
+                # [cv.imwrite(f'{outputDir}Temp{n}-{i}-{k}.jpg', img) for k, img in enumerate(resizedNumberImgs)]
 
-            # Scale to fit the matcher digits images
-            resizedNumberImgs = [cv.resize(numImg, (minWidth, minHeight)) for numImg in numberImgs]
+                actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs]
 
-            actualNumbers = [matchNum(numberImg, digits) for numberImg in resizedNumberImgs]
-
-            actualNumbersGroup.append(actualNumbers)
-        
-        actualNumbersGroupUnique = []
-        for numbers in actualNumbersGroup:
-            if numbers not in actualNumbersGroupUnique:
-                actualNumbersGroupUnique.append(numbers)
+                actualNumbersGroup.append(actualNumbers)
 
         with open(f'{outputDir}Building{n:02d}.txt', 'w') as file:
-            for actualNumbers in actualNumbersGroupUnique:
+            for actualNumbers in actualNumbersGroup:
                 a, b, c = actualNumbers
-                file.write(f'Building {a}{b}{c} to the left\n')
+                # file.write(f'Building {a}{b}{c} to the left\n')
 
         #     s = ''
         #     for num in actualNumbers:
