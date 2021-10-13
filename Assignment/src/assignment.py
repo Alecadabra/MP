@@ -5,26 +5,31 @@ import cv2 as cv
 import number_finder
 
 def main():
+    '''Runs the assignment based on given command-line args.'''
+
     # Resolve command line args
-    args = resolveArgs()
+    args = _resolveArgs()
 
     # Use args to parse required data
-    args = resolvePaths(args)
+    args = _resolveParams(args)
 
     if args.task == 'task1':
         number_finder.task1(
             testImgs=args.testImgs,
             outputDir=args.outputDir,
-            digitsDict=args.digitsDict
+            templatesDict=args.templatesDict
         )
     else: # task2
         number_finder.task2(
             testImgs=args.testImgs,
             outputDir=args.outputDir,
-            digitsDict=args.digitsDict
+            templatesDict=args.templatesDict
         )
 
-def resolvePaths(args):
+def _resolveParams(args):
+    '''Take in command-line args and add to them the output directory,
+    the test images, and the template map.'''
+
     # OS file path separator (\ or /)
     sep = os.path.sep
 
@@ -49,12 +54,13 @@ def resolvePaths(args):
     numTrain = args.num
     # Images to test
     if args.task == 'task1':
-        args.testImgs = [cv.imread(f'{testDir}BS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
+        filename = lambda imgNum: f'{testDir}BS{imgNum:02d}.jpg'
     else:
-        args.testImgs = [cv.imread(f'{testDir}DS{imgNum:02d}.jpg') for imgNum in range(1, numTrain + 1)]
+        filename = lambda imgNum: f'{testDir}DS{imgNum:02d}.jpg'
+    args.testImgs = [cv.imread(filename(n)) for n in range(1, numTrain + 1)]
 
-    digitsDir = f'{projDir}digits{sep}'
-    digitsDict = {
+    templatesDir = f'{projDir}digits{sep}'
+    templatesDict = {
         0: 'Zero',
         1: 'One',
         2: 'Two',
@@ -68,14 +74,19 @@ def resolvePaths(args):
         'l': 'LeftArrow',
         'r': 'RightArrow'
     }
-    # Maps from a key from digitsDict to a list template images
-    args.digitsDict = {
-        key: [cv.imread(f'{digitsDir}{name}{i}.jpg') for i in range(1,6)] for key, name in digitsDict.items()
+    # Maps from a key from templatesDict to a list template images
+    args.templatesDict = {
+        key: [
+            cv.imread(f'{templatesDir}{name}{i}.jpg') for i in range(1,6)
+        ] for key, name in templatesDict.items()
     }
 
     return args
 
-def resolveArgs():
+def _resolveArgs() -> argparse.Namespace:
+    '''Constructs a command-line argument namespace with attributes task, test,
+    output, and num.'''
+
     parser = argparse.ArgumentParser(
         description='MP Assignment by Alec Maughan',
         add_help=True,
