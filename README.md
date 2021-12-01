@@ -1,6 +1,6 @@
 # Machine Perception
 
-Part of my Computer Science degree at Curtin University in 2021.
+Part of my Computer Science degree at Curtin University in 2021. My final mark was 75%.
 
 <table>
   <thead>
