@@ -6,6 +6,10 @@ numbers.
 See [the written report](Report.pdf) for discussion on the approach and
 performance.
 
+## Environment
+
+This program runs in Python 3.8.2, using opencv-python 3.4.8.
+
 ## Run
 
 There are two separate tasks that this assignment runs.
